@@ -1,0 +1,659 @@
+From f2289baa0c6b2159e6b41da75abc3fe138b02bd7 Mon Sep 17 00:00:00 2001
+From: Jim Cadden <jmcadden@bu.edu>
+Date: Thu, 18 Feb 2016 23:04:15 -0500
+Subject: [PATCH 1/7] add ebbrt build target for gcc/libgcc
+
+---
+ config.sub                 |   3 +-
+ config/gthr.m4             |   1 +
+ gcc/config.gcc             |  11 +++++
+ gcc/config/ebbrt.h         |  15 ++++++
+ libgcc/config.host         |   3 ++
+ libgcc/config/gthr-ebbrt.h | 116 +++++++++++++++++++++++++++++++++++++++++++++
+ 6 files changed, 148 insertions(+), 1 deletion(-)
+ create mode 100644 gcc/config/ebbrt.h
+ create mode 100644 libgcc/config/gthr-ebbrt.h
+
+diff --git a/config.sub b/config.sub
+index 6d2e94c..43b15ab 100755
+--- a/config.sub
++++ b/config.sub
+@@ -2,7 +2,7 @@
+ # Configuration validation subroutine script.
+ #   Copyright 1992-2015 Free Software Foundation, Inc.
+ 
+-timestamp='2015-01-01'
++timestamp='2016-02-01'
+ 
+ # This file is free software; you can redistribute it and/or modify it
+ # under the terms of the GNU General Public License as published by
+@@ -1374,6 +1374,7 @@ case $os in
+ 	      | -sym* | -kopensolaris* | -plan9* \
+ 	      | -amigaos* | -amigados* | -msdos* | -newsos* | -unicos* | -aof* \
+ 	      | -aos* | -aros* \
++ 	      | -ebbrt* \
+ 	      | -nindy* | -vxsim* | -vxworks* | -ebmon* | -hms* | -mvs* \
+ 	      | -clix* | -riscos* | -uniplus* | -iris* | -rtu* | -xenix* \
+ 	      | -hiux* | -386bsd* | -knetbsd* | -mirbsd* | -netbsd* \
+diff --git a/config/gthr.m4 b/config/gthr.m4
+index 7b29f1f..eed110c 100644
+--- a/config/gthr.m4
++++ b/config/gthr.m4
+@@ -13,6 +13,7 @@ AC_DEFUN([GCC_AC_THREAD_HEADER],
+ case $1 in
+     aix)	thread_header=config/rs6000/gthr-aix.h ;;
+     dce)	thread_header=config/pa/gthr-dce.h ;;
++    ebbrt)	thread_header=config/gthr-ebbrt.h ;;
+     lynx)	thread_header=config/gthr-lynx.h ;;
+     mipssde)	thread_header=config/mips/gthr-mipssde.h ;;
+     posix)	thread_header=gthr-posix.h ;;
+diff --git a/gcc/config.gcc b/gcc/config.gcc
+index c835734..c6bb438 100644
+--- a/gcc/config.gcc
++++ b/gcc/config.gcc
+@@ -874,6 +874,12 @@ case ${target} in
+     *) echo 'Unknown thread configuration for VxWorks'; exit 1 ;;
+   esac
+   ;;
++*-*-ebbrt*)
++  extra_parts="crtbegin.o crtend.o"
++  gas=yes
++  gnu_ld=yes
++  default_use_cxa_atexit=yes
++  ;;
+ *-*-elf|arc*-*-elf*)
+   # Assume that newlib is being used and so __cxa_atexit is provided.
+   default_use_cxa_atexit=yes
+@@ -1360,6 +1366,11 @@ hppa[12]*-*-hpux11*)
+ 		dwarf2=no
+ 	fi
+ 	;;
++x86_64-*-ebbrt*)
++        tm_file="${tm_file} i386/unix.h i386/att.h dbxelf.h elfos.h i386/i386elf.h i386/x86-64.h ebbrt.h"
++        tmake_file="${tmake_file} i386/t-i386elf t-svr4"
++        use_fixproto=yes
++        ;;
+ i[34567]86-*-darwin*)
+ 	need_64bit_isa=yes
+ 	# Baseline choice for a machine that allows m64 support.
+diff --git a/gcc/config/ebbrt.h b/gcc/config/ebbrt.h
+new file mode 100644
+index 0000000..aad8d4d
+--- /dev/null
++++ b/gcc/config/ebbrt.h
+@@ -0,0 +1,15 @@
++#undef TARGET_OS_CPP_BUILTINS
++//FIXME: I don't think these unix defines should be here
++#define TARGET_OS_CPP_BUILTINS()                \
++  do {                                          \
++    builtin_define_std ("ebbrt");               \
++    builtin_define_std ("unix");                \
++    builtin_assert ("system=ebbrt");            \
++    builtin_assert ("system=unix");             \
++  } while (0);
++
++#undef STARTFILE_SPEC
++#define STARTFILE_SPEC ""
++
++#undef ENDFILE_SPEC
++#define ENDFILE_SPEC ""
+diff --git a/libgcc/config.host b/libgcc/config.host
+index 4329891..0acaa18 100644
+--- a/libgcc/config.host
++++ b/libgcc/config.host
+@@ -1269,6 +1269,9 @@ visium-*-elf*)
+         extra_parts="$extra_parts crtbegin.o crtend.o crti.o crtn.o"
+         tmake_file="visium/t-visium t-fdpbit"
+         ;;
++x86_64-*-ebbrt*)
++        extra_parts="crtbegin.o crtend.o"
++        ;;
+ xstormy16-*-elf)
+ 	tmake_file="stormy16/t-stormy16 t-fdpbit"
+ 	;;
+diff --git a/libgcc/config/gthr-ebbrt.h b/libgcc/config/gthr-ebbrt.h
+new file mode 100644
+index 0000000..28f894e
+--- /dev/null
++++ b/libgcc/config/gthr-ebbrt.h
+@@ -0,0 +1,116 @@
++#ifndef GCC_GTHR_EBBRT_H
++#define GCC_GTHR_EBBRT_H
++
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++#define __GTHREADS 1
++
++//FIXME: maybe these should be padded?
++typedef void *__gthread_key_t;
++typedef void *__gthread_once_t;
++typedef void *__gthread_mutex_t;
++typedef void *__gthread_recursive_mutex_t;
++
++#define __GTHREAD_ONCE_INIT 0
++#define __GTHREAD_MUTEX_INIT_FUNCTION ebbrt_gthread_mutex_init
++#define __GTHREAD_RECURSIVE_MUTEX_INIT_FUNCTION ebbrt_gthread_recursive_mutex_init
++
++extern void ebbrt_gthread_mutex_init(__gthread_mutex_t *);
++extern void ebbrt_gthread_recursive_mutex_init(__gthread_recursive_mutex_t *);
++extern int ebbrt_gthread_active_p(void);
++extern int ebbrt_gthread_once(__gthread_once_t *, void (*func) (void));
++extern int ebbrt_gthread_key_create(__gthread_key_t *keyp, void (*dtor) (void *));
++extern int ebbrt_gthread_key_delete(__gthread_key_t key);
++extern void *ebbrt_gthread_getspecific(__gthread_key_t key);
++extern int ebbrt_gthread_setspecific(__gthread_key_t key, const void *ptr);
++extern int ebbrt_gthread_mutex_destroy(__gthread_mutex_t *mutex);
++extern int ebbrt_gthread_mutex_lock(__gthread_mutex_t *mutex);
++extern int ebbrt_gthread_mutex_trylock(__gthread_mutex_t *mutex);
++extern int ebbrt_gthread_mutex_unlock(__gthread_mutex_t *mutex);
++extern int ebbrt_gthread_recursive_mutex_lock(__gthread_recursive_mutex_t *mutex);
++extern int ebbrt_gthread_recursive_mutex_trylock(__gthread_recursive_mutex_t *mutex);
++extern int ebbrt_gthread_recursive_mutex_unlock(__gthread_recursive_mutex_t *mutex);
++
++static inline int
++__gthread_active_p(void)
++{
++  return ebbrt_gthread_active_p();
++}
++
++static inline int
++__gthread_once(__gthread_once_t *once, void (*func) (void))
++{
++  return ebbrt_gthread_once(once, func);
++}
++
++static inline int
++__gthread_key_create(__gthread_key_t *keyp, void (*dtor) (void *))
++{
++  return ebbrt_gthread_key_create(keyp, dtor);
++}
++
++static inline int
++__gthread_key_delete(__gthread_key_t key)
++{
++  return ebbrt_gthread_key_delete(key);
++}
++
++static inline void *
++__gthread_getspecific(__gthread_key_t key)
++{
++  return ebbrt_gthread_getspecific(key);
++}
++
++static inline int
++__gthread_setspecific(__gthread_key_t key, const void *ptr)
++{
++  return ebbrt_gthread_setspecific(key, ptr);
++}
++
++static inline int
++__gthread_mutex_destroy(__gthread_mutex_t *mutex)
++{
++  return ebbrt_gthread_mutex_destroy(mutex);
++}
++
++static inline int
++__gthread_mutex_lock(__gthread_mutex_t *mutex)
++{
++  return ebbrt_gthread_mutex_lock(mutex);
++}
++
++static inline int
++__gthread_mutex_trylock(__gthread_mutex_t *mutex)
++{
++  return ebbrt_gthread_mutex_trylock(mutex);
++}
++
++static inline int
++__gthread_mutex_unlock(__gthread_mutex_t *mutex)
++{
++  return ebbrt_gthread_mutex_unlock(mutex);
++}
++
++static inline int
++__gthread_recursive_mutex_lock(__gthread_recursive_mutex_t *mutex)
++{
++  return ebbrt_gthread_recursive_mutex_lock(mutex);
++}
++
++static inline int
++__gthread_recursive_mutex_trylock(__gthread_recursive_mutex_t *mutex)
++{
++  return ebbrt_gthread_recursive_mutex_trylock(mutex);
++}
++
++static inline int
++__gthread_recursive_mutex_unlock(__gthread_recursive_mutex_t *mutex)
++{
++  return ebbrt_gthread_recursive_mutex_unlock(mutex);
++}
++#ifdef __cplusplus
++}
++#endif
++#endif
+-- 
+2.5.3
+
+
+From 0be25d5d3023d5d2e4620695a46295be4fb60214 Mon Sep 17 00:00:00 2001
+From: Jim Cadden <jmcadden@bu.edu>
+Date: Wed, 24 Feb 2016 12:29:23 -0500
+Subject: [PATCH 2/7] Add missing thead_header targets
+
+---
+ libgcc/configure       | 1 +
+ libstdc++-v3/configure | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/libgcc/configure b/libgcc/configure
+index 203d384..9a04d89 100644
+--- a/libgcc/configure
++++ b/libgcc/configure
+@@ -5052,6 +5052,7 @@ tm_file="${tm_file_}"
+ case $target_thread_file in
+     aix)	thread_header=config/rs6000/gthr-aix.h ;;
+     dce)	thread_header=config/pa/gthr-dce.h ;;
++    ebbrt)	thread_header=config/gthr-ebbrt.h ;;
+     lynx)	thread_header=config/gthr-lynx.h ;;
+     mipssde)	thread_header=config/mips/gthr-mipssde.h ;;
+     posix)	thread_header=gthr-posix.h ;;
+diff --git a/libstdc++-v3/configure b/libstdc++-v3/configure
+index 8cd4c76..3d04cdc 100755
+--- a/libstdc++-v3/configure
++++ b/libstdc++-v3/configure
+@@ -15257,6 +15257,7 @@ $as_echo "$target_thread_file" >&6; }
+ case $target_thread_file in
+     aix)	thread_header=config/rs6000/gthr-aix.h ;;
+     dce)	thread_header=config/pa/gthr-dce.h ;;
++    ebbrt)	thread_header=config/gthr-ebbrt.h ;;
+     lynx)	thread_header=config/gthr-lynx.h ;;
+     mipssde)	thread_header=config/mips/gthr-mipssde.h ;;
+     posix)	thread_header=gthr-posix.h ;;
+-- 
+2.5.3
+
+
+From 1bbd6e0480806cfacbd46d5efa662557410a6e71 Mon Sep 17 00:00:00 2001
+From: Jim Cadden <jmcadden@bu.edu>
+Date: Wed, 24 Feb 2016 12:38:53 -0500
+Subject: [PATCH 3/7] missing thread check
+
+---
+ gcc/configure.ac | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/gcc/configure.ac b/gcc/configure.ac
+index d414081..fc0d07e 100644
+--- a/gcc/configure.ac
++++ b/gcc/configure.ac
+@@ -1534,7 +1534,7 @@ case ${enable_threads} in
+     # default
+     target_thread_file='single'
+     ;;
+-  aix | dce | lynx | mipssde | posix | rtems | \
++  aix | dce | ebbrt | lynx | mipssde | posix | rtems | \
+   single | tpf | vxworks | win32)
+     target_thread_file=${enable_threads}
+     ;;
+-- 
+2.5.3
+
+
+From c9cd2211eda844fb3cc81a4fd9ff0545aa99ce21 Mon Sep 17 00:00:00 2001
+From: Jim Cadden <jmcadden@bu.edu>
+Date: Wed, 24 Feb 2016 12:44:48 -0500
+Subject: [PATCH 4/7] crossconfig target
+
+---
+ libstdc++-v3/crossconfig.m4 | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/libstdc++-v3/crossconfig.m4 b/libstdc++-v3/crossconfig.m4
+index 10247f9..4f5d67f 100644
+--- a/libstdc++-v3/crossconfig.m4
++++ b/libstdc++-v3/crossconfig.m4
+@@ -247,6 +247,13 @@ case "${host}" in
+     GLIBCXX_CHECK_MATH_SUPPORT
+     GLIBCXX_CHECK_STDLIB_SUPPORT
+     ;;
++  *-ebbrt*)
++    AC_CHECK_HEADERS([sys/types.h locale.h float.h])
++    GLIBCXX_CHECK_BUILTIN_MATH_SUPPORT
++    GLIBCXX_CHECK_COMPLEX_MATH_SUPPORT
++    GLIBCXX_CHECK_STDLIB_SUPPORT
++    GLIBCXX_CHECK_LINKER_FEATURES
++    ;;
+   *-vxworks)
+     AC_DEFINE(HAVE_ACOSF)
+     AC_DEFINE(HAVE_ASINF)
+-- 
+2.5.3
+
+
+From c20dd7c0fc5409d70a2d438878849e94b9d9c671 Mon Sep 17 00:00:00 2001
+From: Jim Cadden <jmcadden@bu.edu>
+Date: Wed, 24 Feb 2016 14:35:11 -0500
+Subject: [PATCH 5/7] add __gthread_recursive_mutex_destroy
+
+---
+ libgcc/config/gthr-ebbrt.h | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/libgcc/config/gthr-ebbrt.h b/libgcc/config/gthr-ebbrt.h
+index 28f894e..ba15c3b 100644
+--- a/libgcc/config/gthr-ebbrt.h
++++ b/libgcc/config/gthr-ebbrt.h
+@@ -29,6 +29,7 @@ extern int ebbrt_gthread_mutex_destroy(__gthread_mutex_t *mutex);
+ extern int ebbrt_gthread_mutex_lock(__gthread_mutex_t *mutex);
+ extern int ebbrt_gthread_mutex_trylock(__gthread_mutex_t *mutex);
+ extern int ebbrt_gthread_mutex_unlock(__gthread_mutex_t *mutex);
++extern int ebbrt_gthread_recursive_mutex_destroy(__gthread_recursive_mutex_t *mutex);
+ extern int ebbrt_gthread_recursive_mutex_lock(__gthread_recursive_mutex_t *mutex);
+ extern int ebbrt_gthread_recursive_mutex_trylock(__gthread_recursive_mutex_t *mutex);
+ extern int ebbrt_gthread_recursive_mutex_unlock(__gthread_recursive_mutex_t *mutex);
+@@ -94,6 +95,12 @@ __gthread_mutex_unlock(__gthread_mutex_t *mutex)
+ }
+ 
+ static inline int
++__gthread_recursive_mutex_destroy(__gthread_recursive_mutex_t *mutex)
++{
++  return ebbrt_gthread_recursive_mutex_destroy(mutex);
++}
++
++static inline int
+ __gthread_recursive_mutex_lock(__gthread_recursive_mutex_t *mutex)
+ {
+   return ebbrt_gthread_recursive_mutex_lock(mutex);
+-- 
+2.5.3
+
+
+From 03b05327ef8819b4e9ef9e2b9e1af1f51fe4699f Mon Sep 17 00:00:00 2001
+From: Jim Cadden <jmcadden@bu.edu>
+Date: Wed, 24 Feb 2016 17:23:44 -0500
+Subject: [PATCH 6/7] add new gthreads define
+
+---
+ libgcc/config/gthr-ebbrt.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/libgcc/config/gthr-ebbrt.h b/libgcc/config/gthr-ebbrt.h
+index ba15c3b..f4cbd4a 100644
+--- a/libgcc/config/gthr-ebbrt.h
++++ b/libgcc/config/gthr-ebbrt.h
+@@ -6,6 +6,7 @@
+ extern "C" {
+ #endif
+ #define __GTHREADS 1
++#define __GTHREADS_CXX0X 1
+ 
+ //FIXME: maybe these should be padded?
+ typedef void *__gthread_key_t;
+-- 
+2.5.3
+
+
+From 436bd326031a8fec3de0dca8aac8516bfdf640c8 Mon Sep 17 00:00:00 2001
+From: Jim Cadden <jmcadden@bu.edu>
+Date: Wed, 24 Feb 2016 17:34:43 -0500
+Subject: [PATCH 7/7] update gthr-ebbrt.h
+
+---
+ libgcc/config/gthr-ebbrt.h | 176 +++++++++++++++++++++++++++++++--------------
+ 1 file changed, 122 insertions(+), 54 deletions(-)
+
+diff --git a/libgcc/config/gthr-ebbrt.h b/libgcc/config/gthr-ebbrt.h
+index f4cbd4a..b2b737a 100644
+--- a/libgcc/config/gthr-ebbrt.h
++++ b/libgcc/config/gthr-ebbrt.h
+@@ -1,123 +1,191 @@
+ #ifndef GCC_GTHR_EBBRT_H
+ #define GCC_GTHR_EBBRT_H
+ 
+-
+ #ifdef __cplusplus
+ extern "C" {
+ #endif
+ #define __GTHREADS 1
++#define __GTHREAD_HAS_COND 1
+ #define __GTHREADS_CXX0X 1
+ 
+-//FIXME: maybe these should be padded?
+ typedef void *__gthread_key_t;
+ typedef void *__gthread_once_t;
+ typedef void *__gthread_mutex_t;
+ typedef void *__gthread_recursive_mutex_t;
++typedef void *__gthread_cond_t;
++typedef void *__gthread_t;
++typedef void *__gthread_time_t;
+ 
+ #define __GTHREAD_ONCE_INIT 0
+ #define __GTHREAD_MUTEX_INIT_FUNCTION ebbrt_gthread_mutex_init
+-#define __GTHREAD_RECURSIVE_MUTEX_INIT_FUNCTION ebbrt_gthread_recursive_mutex_init
++#define __GTHREAD_RECURSIVE_MUTEX_INIT_FUNCTION                                \
++  ebbrt_gthread_recursive_mutex_init
++#define __GTHREAD_COND_INIT_FUNCTION ebbrt_gthread_cond_init
+ 
+ extern void ebbrt_gthread_mutex_init(__gthread_mutex_t *);
+ extern void ebbrt_gthread_recursive_mutex_init(__gthread_recursive_mutex_t *);
+ extern int ebbrt_gthread_active_p(void);
+-extern int ebbrt_gthread_once(__gthread_once_t *, void (*func) (void));
+-extern int ebbrt_gthread_key_create(__gthread_key_t *keyp, void (*dtor) (void *));
++extern int ebbrt_gthread_once(__gthread_once_t *, void (*func)(void));
++extern int ebbrt_gthread_key_create(__gthread_key_t *keyp,
++                                    void (*dtor)(void *));
+ extern int ebbrt_gthread_key_delete(__gthread_key_t key);
+ extern void *ebbrt_gthread_getspecific(__gthread_key_t key);
+ extern int ebbrt_gthread_setspecific(__gthread_key_t key, const void *ptr);
+ extern int ebbrt_gthread_mutex_destroy(__gthread_mutex_t *mutex);
++extern int
++ebbrt_gthread_recursive_mutex_destroy(__gthread_recursive_mutex_t *mutex);
+ extern int ebbrt_gthread_mutex_lock(__gthread_mutex_t *mutex);
+ extern int ebbrt_gthread_mutex_trylock(__gthread_mutex_t *mutex);
+ extern int ebbrt_gthread_mutex_unlock(__gthread_mutex_t *mutex);
+-extern int ebbrt_gthread_recursive_mutex_destroy(__gthread_recursive_mutex_t *mutex);
+-extern int ebbrt_gthread_recursive_mutex_lock(__gthread_recursive_mutex_t *mutex);
+-extern int ebbrt_gthread_recursive_mutex_trylock(__gthread_recursive_mutex_t *mutex);
+-extern int ebbrt_gthread_recursive_mutex_unlock(__gthread_recursive_mutex_t *mutex);
+-
+-static inline int
+-__gthread_active_p(void)
+-{
+-  return ebbrt_gthread_active_p();
+-}
+-
+-static inline int
+-__gthread_once(__gthread_once_t *once, void (*func) (void))
+-{
++extern int
++ebbrt_gthread_recursive_mutex_lock(__gthread_recursive_mutex_t *mutex);
++extern int
++ebbrt_gthread_recursive_mutex_trylock(__gthread_recursive_mutex_t *mutex);
++extern int
++ebbrt_gthread_recursive_mutex_unlock(__gthread_recursive_mutex_t *mutex);
++extern void ebbrt_gthread_cond_init(__gthread_cond_t *);
++extern int ebbrt_gthread_cond_broadcast(__gthread_cond_t *cond);
++extern int ebbrt_gthread_cond_wait(__gthread_cond_t *cond,
++                                   __gthread_mutex_t *mutex);
++extern int ebbrt_gthread_cond_wait_recursive(__gthread_cond_t *,
++                                             __gthread_recursive_mutex_t *);
++extern int ebbrt_gthread_cond_destroy(__gthread_cond_t* cond);
++extern int ebbrt_gthread_create(__gthread_t *thread, void *(*func)(void *),
++                                void *args);
++extern int ebbrt_gthread_join(__gthread_t thread, void **value_ptr);
++extern int ebbrt_gthread_detach(__gthread_t thread);
++extern int ebbrt_gthread_equal(__gthread_t t1, __gthread_t t2);
++extern __gthread_t ebbrt_gthread_self(void);
++extern int ebbrt_gthread_yield(void);
++extern int ebbrt_gthread_mutex_timedlock(__gthread_mutex_t *m,
++                                         const __gthread_time_t *abs_timeout);
++extern int
++ebbrt_gthread_recursive_mutex_timedlock(__gthread_recursive_mutex_t *m,
++                                        const __gthread_time_t *abs_time);
++extern int ebbrt_gthread_cond_signal(__gthread_cond_t *cond);
++extern int ebbrt_gthread_cond_timedwait(__gthread_cond_t *cond,
++                                        __gthread_mutex_t *mutex,
++                                        const __gthread_time_t *abs_timeout);
++
++static inline int __gthread_active_p(void) { return ebbrt_gthread_active_p(); }
++
++static inline int __gthread_once(__gthread_once_t *once, void (*func)(void)) {
+   return ebbrt_gthread_once(once, func);
+ }
+ 
+-static inline int
+-__gthread_key_create(__gthread_key_t *keyp, void (*dtor) (void *))
+-{
++static inline int __gthread_key_create(__gthread_key_t *keyp,
++                                       void (*dtor)(void *)) {
+   return ebbrt_gthread_key_create(keyp, dtor);
+ }
+ 
+-static inline int
+-__gthread_key_delete(__gthread_key_t key)
+-{
++static inline int __gthread_key_delete(__gthread_key_t key) {
+   return ebbrt_gthread_key_delete(key);
+ }
+ 
+-static inline void *
+-__gthread_getspecific(__gthread_key_t key)
+-{
++static inline void *__gthread_getspecific(__gthread_key_t key) {
+   return ebbrt_gthread_getspecific(key);
+ }
+ 
+-static inline int
+-__gthread_setspecific(__gthread_key_t key, const void *ptr)
+-{
++static inline int __gthread_setspecific(__gthread_key_t key, const void *ptr) {
+   return ebbrt_gthread_setspecific(key, ptr);
+ }
+ 
+-static inline int
+-__gthread_mutex_destroy(__gthread_mutex_t *mutex)
+-{
++static inline int __gthread_mutex_destroy(__gthread_mutex_t *mutex) {
+   return ebbrt_gthread_mutex_destroy(mutex);
+ }
+ 
+ static inline int
+-__gthread_mutex_lock(__gthread_mutex_t *mutex)
+-{
++__gthread_recursive_mutex_destroy(__gthread_recursive_mutex_t *mutex) {
++  return ebbrt_gthread_recursive_mutex_destroy(mutex);
++}
++
++static inline int __gthread_mutex_lock(__gthread_mutex_t *mutex) {
+   return ebbrt_gthread_mutex_lock(mutex);
+ }
+ 
+-static inline int
+-__gthread_mutex_trylock(__gthread_mutex_t *mutex)
+-{
++static inline int __gthread_mutex_trylock(__gthread_mutex_t *mutex) {
+   return ebbrt_gthread_mutex_trylock(mutex);
+ }
+ 
+-static inline int
+-__gthread_mutex_unlock(__gthread_mutex_t *mutex)
+-{
++static inline int __gthread_mutex_unlock(__gthread_mutex_t *mutex) {
+   return ebbrt_gthread_mutex_unlock(mutex);
+ }
+ 
+ static inline int
+-__gthread_recursive_mutex_destroy(__gthread_recursive_mutex_t *mutex)
+-{
+-  return ebbrt_gthread_recursive_mutex_destroy(mutex);
+-}
+-
+-static inline int
+-__gthread_recursive_mutex_lock(__gthread_recursive_mutex_t *mutex)
+-{
++__gthread_recursive_mutex_lock(__gthread_recursive_mutex_t *mutex) {
+   return ebbrt_gthread_recursive_mutex_lock(mutex);
+ }
+ 
+ static inline int
+-__gthread_recursive_mutex_trylock(__gthread_recursive_mutex_t *mutex)
+-{
++__gthread_recursive_mutex_trylock(__gthread_recursive_mutex_t *mutex) {
+   return ebbrt_gthread_recursive_mutex_trylock(mutex);
+ }
+ 
+ static inline int
+-__gthread_recursive_mutex_unlock(__gthread_recursive_mutex_t *mutex)
+-{
++__gthread_recursive_mutex_unlock(__gthread_recursive_mutex_t *mutex) {
+   return ebbrt_gthread_recursive_mutex_unlock(mutex);
+ }
++
++static inline int __gthread_cond_broadcast(__gthread_cond_t *cond) {
++  return ebbrt_gthread_cond_broadcast(cond);
++}
++static inline int __gthread_cond_wait(__gthread_cond_t *cond,
++                                      __gthread_mutex_t *mutex) {
++  return ebbrt_gthread_cond_wait(cond, mutex);
++}
++static inline int
++__gthread_cond_wait_recursive(__gthread_cond_t *cond,
++                              __gthread_recursive_mutex_t *mutex) {
++  return ebbrt_gthread_cond_wait_recursive(cond, mutex);
++}
++
++static inline int __gthread_cond_destroy(__gthread_cond_t* cond) {
++  return ebbrt_gthread_cond_destroy(cond);
++}
++
++static inline int __gthread_create(__gthread_t *thread, void *(*func)(void *),
++                                   void *args) {
++  return ebbrt_gthread_create(thread, func, args);
++}
++
++static inline int __gthread_join(__gthread_t thread, void **value_ptr) {
++  return ebbrt_gthread_join(thread, value_ptr);
++}
++
++static inline int __gthread_detach(__gthread_t thread) {
++  return ebbrt_gthread_detach(thread);
++}
++
++static inline int __gthread_equal(__gthread_t t1, __gthread_t t2) {
++  return ebbrt_gthread_equal(t1, t2);
++}
++
++static inline __gthread_t __gthread_self(void) { return ebbrt_gthread_self(); }
++
++static inline int __gthread_yield(void) { return ebbrt_gthread_yield(); }
++
++static inline int
++__gthread_mutex_timedlock(__gthread_mutex_t *m,
++                          const __gthread_time_t *abs_timeout) {
++  return ebbrt_gthread_mutex_timedlock(m, abs_timeout);
++}
++
++static inline int
++__gthread_recursive_mutex_timedlock(__gthread_recursive_mutex_t *m,
++                                    const __gthread_time_t *abs_time) {
++  return ebbrt_gthread_mutex_timedlock(m, abs_time);
++}
++
++static inline int __gthread_cond_signal(__gthread_cond_t *cond) {
++  return ebbrt_gthread_cond_signal(cond);
++}
++
++static inline int
++__gthread_cond_timedwait(__gthread_cond_t *cond, __gthread_mutex_t *mutex,
++                         const __gthread_time_t *abs_timeout) {
++  return ebbrt_gthread_cond_timedwait(cond, mutex, abs_timeout);
++}
++
+ #ifdef __cplusplus
+ }
+ #endif
+-- 
+2.5.3
+
