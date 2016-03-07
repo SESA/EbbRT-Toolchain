@@ -89,7 +89,7 @@ download: $(BINARIES-TAR-PATH)
 binaries-install: $(BINARIES-TAR-PATH) $(INSTALLDIR)
 	$(TAR) -xf $(BINARIES-TAR-PATH) --strip-components 1 -C $(INSTALLDIR)
 
-$(BINARIES-TAR-PATH): | $(SRC-DIR)
+$(BINARIES-TAR-PATH): | $(SRCDIR)
 	$(WGET) $(BINARIES-URL) -O $(BINARIES-TAR-PATH)
 
 clean:
